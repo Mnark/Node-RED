@@ -1,0 +1,28 @@
+{
+  "name": "node-red-raspicam",
+  "version": "0.0.4",
+  "description": "A node that will take a single, or a timelapse series of images and save to file.",
+  "main": "raspicam.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mnark/Node-RED.git"
+  },
+  "keywords": [
+    "Node-red",
+    "raspberry",
+    "pi",
+    "camera",
+    "timelapse",
+    "raspistill"
+  ],
+  "cpu": ["arm"],
+  "author": "Mark Basham <mark.basham@ntlworld.com>",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/Mnark/Node-RED/issues"
+  },
+  "homepage": "https://github.com/Mnark/Node-RED#readme"
+}

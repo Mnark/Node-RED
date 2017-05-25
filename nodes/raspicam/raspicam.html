@@ -1,0 +1,224 @@
+<script type="text/javascript">
+    "use strict"
+    var build_defaults = () => {
+        var defaults = {}
+        raspistill_def.params.forEach(function (element) {
+            if (element.active) {
+                switch (element.type) {
+                    case "text":
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "str" }
+                        break
+                    case "number":
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "num" }
+                        break
+                    case "boolean":
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "num" }
+                        break
+                    default:
+                        console.log("parameter type not catered for : " + element.type)
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "bool" }
+                }
+            }
+        }, this)
+        defaults.filename = { value: "img-%06d.jpg" }
+        defaults.filenametype = { value: "str" }
+        defaults.path = { value: "", }
+        defaults.pathtype = { value: "str" }
+        return defaults
+    }
+    $.getScript('/raspicam/raspistill_def.js', () => {
+        RED.nodes.registerType('raspicam', {
+            category: 'Raspberry_Pi',
+            color: '#3FADB5',
+            defaults: build_defaults(),
+            inputs: 1,
+            outputs: 2,
+            outputlabels: ['on image', 'on end'],
+            icon: "camera.png",
+            align: "right",
+            label: function () { return this.name || "Raspicam" },
+            oneditprepare: function () {
+                $("#preview-button").click((event) => {
+                    var url = new URL(event.target.formAction)
+                    $("#preview-image").attr("src", url.origin + '/raspicam/image-preview?' + $("#dialog-form").serialize())
+                })
+                $("input:text[id^='node-input-']").each((index, element) => {
+                    $("#" + element.id).typedInput({
+                        default: "str",
+                        types: ["msg", "str"]
+                    })
+                    $("#" + element.id).typedInput('type', this[element.id.substr(11) + "type"])
+                })
+
+                $("input[id^='node-input-']").filter("input[type='number']").each((index, element) => {
+                    $("#" + element.id).typedInput({
+                        default: "num",
+                        types: ["msg", "num"]
+                    })
+                    $("#" + element.id).typedInput('type', this[element.id.substr(11) + "type"])
+                })
+
+
+                $("input:radio[name='output-type-name']").change((event) => {
+                    if (event.target.value == "0") {
+                        $("#file-options").show()
+                    } else {
+                        $("#file-options").hide()
+                    }
+                })
+
+                $("input:radio[name='output-mode']").change((event) => {
+                    if (event.target.value == "0") {
+                        $("#mode-type").hide()
+                    } else {
+                        $("#mode-type").show()
+                    }
+                })
+
+                if (this.output == "-") {
+                    $("#output-type-payload").prop("checked", true)
+                } else {
+                    $("#output-type-file").prop("checked", true)
+                }
+
+                if (this.timelapsetype == "bool") {
+                    $("#output-mode-single").prop("checked", true)
+                    $("#mode-type").hide()
+                } else {
+                    $("#output-mode-timelapse").prop("checked", true)
+                    $("#node-input-timelapse").val(this.timelapse / 1000)
+                    this.timelapse = this.timelapse / 1000
+                    $("#node-input-timeout").val(this.timeout / 1000)
+                    this.timeout = this.timeout / 1000
+                }
+            },
+            oneditsave: function () {
+                $("input[id^='node-input-']").each((index, element) => {
+                    this[element.id.substr(11) + "type"] = $("#" + element.id).typedInput("type")
+                })
+
+                if ($("#output-type-payload").prop('checked')) {
+                    this.output = "-"
+                } else {
+                    this.output = this.path + this.filename
+                }
+
+                if ($("#output-mode-single").prop("checked")) {
+                    this.timelapsetype = "bool"
+                    $("#node-input-timeout").val(30)
+                    this.verbose = false
+                } else {
+                    if ($("#output-mode-timelapse").prop("checked")) {
+                        this.timelapsetype = "num"
+                        $("#node-input-timelapse").val(parseInt($("#node-input-timelapse").val()) * 1000)
+                        $("#node-input-timeout").val(parseInt($("#node-input-timeout").val()) * 1000)
+                        this.verbose = true
+                    }
+                }
+            },
+            paletteLabel: "raspicam",
+        })
+    })
+
+</script>
+
+<script type="text/x-red" data-template-name="raspicam">
+
+    <div style='text-align: center'>
+        <img id="preview-image" />
+        <button id="preview-button" type="button" style="background-color: lightgreen"> Preview </button>
+    </div>
+
+    <div class="form-row">
+        <label for="output-types"><i class="icon-bookmark"></i> Output&nbsp;to</label>
+        <div id="output-types" style="display: inline-flex">
+            <label for="output-type-file" class="radio-inline">File</label>
+            <input type="radio" name="output-type-name" id="output-type-file" value="0">
+            <label for="output-type-payload" class="radio-inline">Payload</label>
+            <input type="radio" name="output-type-name" id="output-type-payload" value="1">
+        </div>
+    </div>
+
+    <div class="form-row" id="file-options" style="display: inline-flex">
+        <label for="file-option"></label>
+        <div id="file-option" style="display: inline-block">
+            <div>
+                <label for="node-input-path">Path</label>
+                <input type="text" id="node-input-path" placeholder="Output Path">
+            </div>
+
+            <div>
+                <label for="node-input-filename">File name</label>
+                <input type="text" id="node-input-filename" placeholder="Use a pattern. eg img%04d.jpg">
+            </div>
+
+        </div>
+    </div>
+
+    <div class="form-row">
+        <label for="mode-types"><i class="fa fa-clock-o fa-fw"></i> Mode </label>
+        <span style="display: inline-flex" id="mode-types">
+            <label for="output-mode-single" class="radio-inline">Single</label>
+            <input type="radio" name="output-mode" id="output-mode-single" value="0">
+            <label for="output-mode-timelapse" class="radio-inline">Timelapse</label>
+            <input type="radio" name="output-mode" id="output-mode-timelapse" value="1">
+        </span>
+    </div>
+
+    <div id="mode-type" class="form-row" display="inline-flex">
+        <label for="mode-property"></label>
+        <div id="mode-property" style="display: inline-block">
+            <div>
+                <label for="node-input-timeout"> Duration</label>
+                <input type="number" id="node-input-timeout">
+            </div>
+
+            <div>
+                <label for="node-input-timelapse"> Delay</label>
+                <input type="number" id="node-input-timelapse">
+            </div>
+
+            <div>
+                <label for="node-input-framestart">
+                    Start frame</label>
+                <input type="number" id="node-input-framestart">
+            </div>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <label for="show-properties"><i class="fa fa-picture-o fa-fw"></i> Image</label>
+        <button id="show-properties" data-toggle="collapse" data-target="#image-properties">Properties</button>
+    </div>
+
+    <div id="image-properties" class="form-row collapse" display="inline-flex">
+        <label for="image-property"></label>
+        <div id="image-property" style="display: inline-block">
+            <div>
+                <label for="node-input-width"> Width</label>
+                <input type="number" name="node-input-width" id="node-input-width">
+            </div>
+            <div>
+                <label for="node-input-height"> Height</label>
+                <input type="number" name="node-input-height" id="node-input-height">
+            </div>
+            <div>
+                <label for="node-input-quality"> Quality</label>
+                <input type="number" name="node-input-quality" id="node-input-quality">
+            </div>
+        </div>
+    </div>
+
+</script>
+
+<script type="text/x-red " data-help-name="raspicam">
+    <p>Raspberry Pi Camera</p>
+    <p>Take a single, or timelapse series of images.</p>
+
+    <p>This node requires a Raspberry pi with camera is installed.</p>
+
+</script>
