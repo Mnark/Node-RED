@@ -33,7 +33,7 @@
     $.getScript('/raspicam/raspistill_def.js', () => {
         RED.nodes.registerType('raspicam', {
             category: 'Raspberry_Pi',
-            color: '#3FADB5',
+            color: '#C6DBEF',
             defaults: build_defaults(),
             inputs: 1,
             outputs: 2,
@@ -46,6 +46,7 @@
                     var url = new URL(event.target.formAction)
                     $("#preview-image").attr("src", url.origin + '/raspicam/image-preview?' + $("#dialog-form").serialize())
                 })
+
                 $("input:text[id^='node-input-']").each((index, element) => {
                     $("#" + element.id).typedInput({
                         default: "str",
@@ -85,21 +86,70 @@
                     $("#output-type-file").prop("checked", true)
                 }
 
-                if (this.timelapsetype == "bool") {
+                if (this.timelapse == "") {
                     $("#output-mode-single").prop("checked", true)
                     $("#mode-type").hide()
                 } else {
                     $("#output-mode-timelapse").prop("checked", true)
-                    $("#node-input-timelapse").val(this.timelapse / 1000)
-                    this.timelapse = this.timelapse / 1000
-                    $("#node-input-timeout").val(this.timeout / 1000)
-                    this.timeout = this.timeout / 1000
+                    if (this.timelapsetype == "str") {
+                        $("#node-input-timelapse").val(this.timelapse / 1000)
+                        //                        this.timelapse = this.timelapse / 1000
+                    }
+                    if (this.timeouttype == "str") {
+                        $("#node-input-timeout").val(this.timeout / 1000)
+                        //this.timeout = this.timeout / 1000
+                    }
+                }
+
+                var annotate = this.annotate
+                if (annotate > 0) {
+                    switch (true) {
+                        case annotate > 1024:
+                            $("input[id='overlay-black']").prop('checked', true)
+                            annotate = annotate - 1024
+                        case annotate > 512:
+                            $("input[id='overlay-frame']").prop('checked', true)
+                            annotate = annotate - 512
+                        case annotate > 256:
+                            $("input[id='overlay-motion']").prop('checked', true)
+                            annotate = annotate - 256
+                        case annotate > 128:
+                            $("input[id='overlay-lens']").prop('checked', true)
+                            annotate = annotate - 128
+                        case annotate > 64:
+                            $("input[id='overlay-gain']").prop('checked', true)
+                            annotate = annotate - 64
+                        case annotate > 32:
+                            $("input[id='overlay-caf']").prop('checked', true)
+                            annotate = annotate - 32
+                        case annotate > 16:
+                            $("input[id='overlay-shutter']").prop('checked', true)
+                            annotate = annotate - 16
+                        case annotate > 8:
+                            $("input[id='overlay-date']").prop('checked', true)
+                            annotate = annotate - 8
+                        case this.annotate > 4:
+                            $("input[id='overlay-time']").prop('checked', true)
+                            annotate = annotate - 4
+                    }
                 }
             },
             oneditsave: function () {
                 $("input[id^='node-input-']").each((index, element) => {
                     this[element.id.substr(11) + "type"] = $("#" + element.id).typedInput("type")
                 })
+
+                var annotate = 0
+                $("input[id^='overlay-']").each((index, element) => {
+                    if (element.checked) {
+                        annotate = annotate + parseInt(element.value)
+                    }
+                })
+                if (annotate > 0) {
+                    this.annotate = annotate
+                } else {
+                    this.annotate = ""
+                }
 
                 if ($("#output-type-payload").prop('checked')) {
                     this.output = "-"
@@ -113,9 +163,13 @@
                     this.verbose = false
                 } else {
                     if ($("#output-mode-timelapse").prop("checked")) {
-                        this.timelapsetype = "num"
-                        $("#node-input-timelapse").val(parseInt($("#node-input-timelapse").val()) * 1000)
-                        $("#node-input-timeout").val(parseInt($("#node-input-timeout").val()) * 1000)
+                        //this.timelapsetype = "num"
+                        if ($("#node-input-timelapse").typedInput("type") == "num") {
+                            $("#node-input-timelapse").val(parseInt($("#node-input-timelapse").val()) * 1000)
+                        }
+                        if ($("#node-input-timeout").typedInput("type") == "num") {
+                            $("#node-input-timeout").val(parseInt($("#node-input-timeout").val()) * 1000)
+                        }
                         this.verbose = true
                     }
                 }
@@ -128,8 +182,10 @@
 
 <script type="text/x-red" data-template-name="raspicam">
 
-    <div style='text-align: center'>
+    <div style="margin: auto; width:90%">
         <img id="preview-image" />
+    </div>
+    <div class="form-row" style="text-align: center">
         <button id="preview-button" type="button" style="background-color: lightgreen"> Preview </button>
     </div>
 
@@ -174,18 +230,18 @@
         <div id="mode-property" style="display: inline-block">
             <div>
                 <label for="node-input-timeout"> Duration</label>
-                <input type="number" id="node-input-timeout">
+                <input type="text" id="node-input-timeout">
             </div>
 
             <div>
                 <label for="node-input-timelapse"> Delay</label>
-                <input type="number" id="node-input-timelapse">
+                <input type="text" id="node-input-timelapse">
             </div>
 
             <div>
                 <label for="node-input-framestart">
-                    Start frame</label>
-                <input type="number" id="node-input-framestart">
+                    Start&nbsp;frame</label>
+                <input type="text" id="node-input-framestart">
             </div>
         </div>
     </div>
@@ -193,6 +249,7 @@
     <div class="form-row">
         <label for="show-properties"><i class="fa fa-picture-o fa-fw"></i> Image</label>
         <button id="show-properties" data-toggle="collapse" data-target="#image-properties">Properties</button>
+        <button id="show-overlay" data-toggle="collapse" data-target="#image-overlays">Overlay</button>
     </div>
 
     <div id="image-properties" class="form-row collapse" display="inline-flex">
@@ -209,6 +266,52 @@
             <div>
                 <label for="node-input-quality"> Quality</label>
                 <input type="number" name="node-input-quality" id="node-input-quality">
+            </div>
+            <div>
+                <label for="node-input-sharpness"> Sharpness</label>
+                <input type="number" name="node-input-sharpness" id="node-input-sharpness">
+            </div>
+        </div>
+    </div>
+
+    <div id="image-overlays" class="form-row collapse" style="display:inline-flex">
+        <label for="image-overlay"></label>
+        <div id="image-overlay" style="display: inline-block">
+            <div class="checkbox">
+                <label for="overlay-time"> Time</label>
+                <input type="checkbox" id="overlay-time" value="4">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-date"> Date</label>
+                <input type="checkbox" id="overlay-date" value="8">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-shutter"> Shutter&nbsp;Settings</label>
+                <input type="checkbox" id="overlay-shutter" value="16">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-caf"> CAF&nbsp;Settings</label>
+                <input type="checkbox" id="overlay-caf" value="32">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-gain"> Gain&nbsp;Settings</label>
+                <input type="checkbox" id="overlay-gain" value="64">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-lens"> Lens&nbsp;Settings</label>
+                <input type="checkbox" id="overlay-lens" value="128">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-motion"> Motion&nbsp;Settings</label>
+                <input type="checkbox" id="overlay-motion" value="256">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-frame"> Frame&nbsp;Number</label>
+                <input type="checkbox" id="overlay-frame" value="512">
+            </div>
+            <div class="checkbox">
+                <label for="overlay-black"> Black&nbsp;Background</label>
+                <input type="checkbox" id="overlay-black" value="1024">
             </div>
         </div>
     </div>
