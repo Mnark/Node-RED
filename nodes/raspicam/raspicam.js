@@ -42,18 +42,23 @@ module.exports = function (RED) {
                                     if (currentValue.name == 'output') {
                                         var pathStr = (this.pathtype == "str") ? this.path : msg[this.path]
                                         var filename = (this.filenametype == "str") ? this.filename : msg[this.filename]
-                                        parameters.push(pathStr + filename)
+                                        if (filename == '-') {
+                                            parameters.push(filename)
+                                            this.output = '-'
+                                        } else {
+                                            parameters.push(pathStr + filename)
+                                        }    
                                     } else {
                                         parameters.push(this[currentValue.name])
                                     }
                                 }
-                            }    
+                            }
                         }
                     }
                 }
             })
             parameters.push("--nopreview")
-            RED.log.debug( "Raspicam: parameters for spawned process: " + JSON.stringify(parameters))
+            RED.log.debug("Raspicam: parameters for spawned process: " + JSON.stringify(parameters))
             return parameters
         }
 
@@ -90,11 +95,18 @@ module.exports = function (RED) {
             return parameters
         }
 
+        this.on('close', (callback) => {
+            raspicam_process.kill("SIGTERM", 1880)
+            callback()
+        })
+
         this.on('input', (msg) => {
             var pathStr = (this.pathtype == "str") ? this.path : msg[this.path]
             if (!fs.existsSync(pathStr)) {
                 fs.mkdirSync(pathStr)
-            } else {
+
+            }
+            if (this.framestart == "") {
                 let files = fs.readdirSync(pathStr)
                 let framestart = 0
                 files.forEach((element, index) => {
@@ -105,11 +117,9 @@ module.exports = function (RED) {
                 })
                 if (framestart > 0) {
                     this.framestart = framestart + 1
-                }    
+                }
             }
-            if (raspicam_process !== null) {
-                raspicam_process.kill()
-            }
+            RED.log.info(`Raspicam: Starting capture`)
             raspicam_process = spawn(raspistill_def.command.name, buildParams(msg))
             var currentFile;
             var dataStr = ""
@@ -118,7 +128,11 @@ module.exports = function (RED) {
             })
 
             raspicam_process.stderr.on('data', (data) => {
-                if (this.output == "-") {
+                if (this.output == "-") { // output image direct to msg.payload
+                    if (msg.payload) {
+
+                    } 
+                     //msg.payload.write(data)
                 } else {
                     dataStr = dataStr + data.toString()
                     while (dataStr.indexOf('\n') > -1) {
@@ -126,46 +140,39 @@ module.exports = function (RED) {
                             currentFile = dataStr.substr(20)
                             RED.log.debug(`stderr raspicam setting current: ${currentFile}`)
                         }
-
                         if (dataStr.startsWith("Finished capture ")) {
-                            /*                            if (!msg.raspicam) {
-                                                msg.raspicam = {
-                                                    images: [],
-                                                    videos: []
-                                                }
-                                            }
-                            msg.raspicam.images.push({ name: currentFile })*/
                             var outmsg = msg
                             outmsg.payload = currentFile
-                            this.send([outmsg, null])
+                            setTimeout((outmsg) => {
+                                this.send([outmsg, null])
+                            }, 500, outmsg)
                             RED.log.debug(`stderr raspicam finished capture of ${currentFile}`)
                         }
                         //console.log("discarding: " + dataStr.substr(0, dataStr.indexOf("\n") + 1))
                         dataStr = dataStr.substr(dataStr.indexOf("\n") + 1)
                     }
                 }
-
-                //RED.log.info(`raspicam process returned message: ${data}`)
-                //this.send([msg, null])
-                //RED.log.info(`stderr raspicam process exited with code ${data}`)
             })
 
-            raspicam_process.on('close', (code) => {
+            raspicam_process.on('close', (code, signal) => {
                 switch (code) {
+                    case null:
+                        RED.log.warn(`Raspicam: process exited with signal ${signal}`)
+                        break
                     case 0:
-                        RED.log.debug(`raspicam: process exited with code ${code}`)
+                        RED.log.debug(`Raspicam: process exited with code: ${code} signal: ${signal}`)
                         break
                     case 64:
-                        RED.log.error(`raspicam: code ${code}` + " Bad command line parameter")    
+                        RED.log.error(`Raspicam: code ${code}` + " Bad command line parameter")
                         break
                     case 70:
-                        RED.log.error(`raspicam:code ${code}` + " Software or camera error")    
+                        RED.log.error(`Raspicam: code ${code}` + " Software or camera error")
                         break
                     case 130:
-                        RED.log.error(`raspicam:code ${code}` + " Application terminated by Ctrl-C" )    
+                        RED.log.error(`Raspicam: code ${code}` + " Application terminated by Ctrl-C")
                         break
                     default:
-                        RED.log.error(`raspicam: Process exited with code ${code}`)    
+                        RED.log.error(`Raspicam: Process exited with code: ${code} signal: ${signal}`)
                 }
                 if (!msg.raspicam) {
                     msg.raspicam = {}

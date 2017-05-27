@@ -1,6 +1,6 @@
 {
   "name": "node-red-raspicam",
-  "version": "0.0.5",
+  "version": "0.0.7",
   "description": "A node that will take a single, or a timelapse series of images and save to file.",
   "main": "raspicam.js",
   "scripts": {
