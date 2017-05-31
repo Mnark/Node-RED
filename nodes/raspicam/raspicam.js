@@ -1,6 +1,7 @@
 "use strict"
 const spawn = require('child_process').spawn
 const fs = require('fs')
+const Writable = require('stream').Writable
 const url = require('url')
 const raspistill_def = require('./raspistill_def.js')
 
@@ -19,6 +20,15 @@ module.exports = function (RED) {
         this.pathtype = config.pathtype || "str"
 
         var raspicam_process = null
+
+        class MsgStream extends Writable {
+            constructor(options) {
+                super(options);
+            }
+            _write(chunk, encoding, callback) {
+                callback()
+            }
+        }
 
         var buildParams = (msg) => {
             let parameters = []
@@ -40,14 +50,13 @@ module.exports = function (RED) {
                                     parameters.push(parseInt(this[currentValue.name]))
                                 } else {
                                     if (currentValue.name == 'output') {
-                                        var pathStr = (this.pathtype == "str") ? this.path : msg[this.path]
-                                        var filename = (this.filenametype == "str") ? this.filename : msg[this.filename]
-                                        if (filename == '-') {
-                                            parameters.push(filename)
-                                            this.output = '-'
+                                        if (this.output == "-") {
+                                            parameters.push("-")
                                         } else {
+                                            var pathStr = (this.pathtype == "str") ? this.path : msg[this.path]
+                                            var filename = (this.filenametype == "str") ? this.filename : msg[this.filename]
                                             parameters.push(pathStr + filename)
-                                        }    
+                                        }
                                     } else {
                                         parameters.push(this[currentValue.name])
                                     }
@@ -58,7 +67,7 @@ module.exports = function (RED) {
                 }
             })
             parameters.push("--nopreview")
-            RED.log.debug("Raspicam: parameters for spawned process: " + JSON.stringify(parameters))
+            RED.log.info("Raspicam: parameters for spawned process: " + JSON.stringify(parameters))
             return parameters
         }
 
@@ -101,54 +110,67 @@ module.exports = function (RED) {
         })
 
         this.on('input', (msg) => {
-            var pathStr = (this.pathtype == "str") ? this.path : msg[this.path]
-            if (!fs.existsSync(pathStr)) {
-                fs.mkdirSync(pathStr)
+            RED.log.info(`Raspicam: Input Message: ` + JSON.stringify(msg))
 
-            }
-            if (this.framestart == "") {
-                let files = fs.readdirSync(pathStr)
-                let framestart = 0
-                files.forEach((element, index) => {
-                    var frame = parseInt(element.replace(/[^0-9\.]/g, ''))
-                    if (frame > framestart) {
-                        framestart = frame
+            if (this.output == "-") {
+                msg.payload = new MsgStream()
+            } else {
+                var pathStr = (this.pathtype == "str") ? this.path : msg[this.path]
+                if (!fs.existsSync(pathStr)) {
+                    fs.mkdirSync(pathStr)
+                    this.framestart = 0
+                }
+                if (this.framestart == "") {
+                    let files = fs.readdirSync(pathStr)
+                    let framestart = 0
+                    files.forEach((element, index) => {
+                        var frame = parseInt(element.replace(/[^0-9\.]/g, ''))
+                        if (frame > framestart) {
+                            framestart = frame
+                        }
+                    })
+                    if (framestart > 0) {
+                        this.framestart = framestart + 1
                     }
-                })
-                if (framestart > 0) {
-                    this.framestart = framestart + 1
                 }
             }
             RED.log.info(`Raspicam: Starting capture`)
+            this.status({ fill: "green", shape: "dot", text: "Active" });
             raspicam_process = spawn(raspistill_def.command.name, buildParams(msg))
             var currentFile;
             var dataStr = ""
+
             raspicam_process.stdout.on('data', (data) => {
-                RED.log.info(`stdout raspicam setting current: ${data}`)
+                //msg.payload.write(data)
+                RED.log.debug(`Raspicam sending ` + data.length + " bytes")
+            })
+
+            raspicam_process.stdout.on('end', (data) => {
+                msg.payload = currentFile
+                RED.log.info(`Raspicam sending end `)
+                this.send([msg, null])
             })
 
             raspicam_process.stderr.on('data', (data) => {
                 if (this.output == "-") { // output image direct to msg.payload
                     if (msg.payload) {
-
-                    } 
-                     //msg.payload.write(data)
+                    }
+                    //msg.payload.write(data)
                 } else {
                     dataStr = dataStr + data.toString()
                     while (dataStr.indexOf('\n') > -1) {
                         if (dataStr.startsWith("Opening output file ")) {
-                            currentFile = dataStr.substr(20)
+                            currentFile = dataStr.substr(20, dataStr.indexOf('\n') - 20)
                             RED.log.debug(`stderr raspicam setting current: ${currentFile}`)
                         }
                         if (dataStr.startsWith("Finished capture ")) {
                             var outmsg = msg
                             outmsg.payload = currentFile
-                            setTimeout((outmsg) => {
+                            if (this.timelapse !== "") {
                                 this.send([outmsg, null])
-                            }, 500, outmsg)
+                            }
                             RED.log.debug(`stderr raspicam finished capture of ${currentFile}`)
                         }
-                        //console.log("discarding: " + dataStr.substr(0, dataStr.indexOf("\n") + 1))
                         dataStr = dataStr.substr(dataStr.indexOf("\n") + 1)
                     }
                 }
@@ -158,7 +180,8 @@ module.exports = function (RED) {
                 switch (code) {
                     case null:
                         RED.log.warn(`Raspicam: process exited with signal ${signal}`)
-                        break
+                        raspicam_process = null
+                        return
                     case 0:
                         RED.log.debug(`Raspicam: process exited with code: ${code} signal: ${signal}`)
                         break
@@ -198,9 +221,23 @@ module.exports = function (RED) {
                         msg.raspicam.image.outputmode = "file"
                         msg.raspicam.image.filename = this.output
                     }
+                    msg.payload = currentFile
                 }
                 this.send([null, msg])
+                this.status({ fill: "yellow", shape: "dot", text: "Idle" })
                 raspicam_process = null
+            })
+
+            raspicam_process.on('disconnect', () => {
+                console.log("Raspicam disconnected")
+            })
+
+            raspicam_process.on('error', (err) => {
+                console.log("Raspicam error:" + JSON.stringify(err))
+            })
+
+            raspicam_process.on('exit', (code, signal) => {
+                console.log("Raspicam exit code:" + code + " signal: " + signal)
             })
         })
 
@@ -249,6 +286,9 @@ module.exports = function (RED) {
                 res.send(404)
             }
         })
+
+        this.status({ fill: "yellow", shape: "dot", text: "Idle" })
+
     }
     RED.nodes.registerType("raspicam", Raspicam)
 }

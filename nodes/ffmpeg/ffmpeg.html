@@ -1,0 +1,139 @@
+<script type="text/javascript">
+    "use strict"
+    var build_defaults = () => {
+        var defaults = {}
+        ffmpeg_def.params.forEach(function (element) {
+            if (element.active) {
+                switch (element.type) {
+                    case "text":
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "str" }
+                        break
+                    case "number":
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "num" }
+                        break
+                    case "boolean":
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "bool" }
+                        break
+                    default:
+                        console.log("parameter type not catered for : " + element.type)
+                        defaults[element.name] = { value: element.default }
+                        defaults[element.name + "type"] = { value: "bool" }
+                }
+            }
+        }, this)
+        defaults.outputframewidth = { value: "", }
+        defaults.outputframewidthtype = { value: "num" }
+        defaults.outputframeheight = { value: "", }
+        defaults.outputframeheighttype = { value: "num" }
+        return defaults
+    }
+    $.getScript('/ffmpeg/ffmpeg_def.js', () => {
+        RED.nodes.registerType('ffmpeg', {
+            category: 'utility',
+            color: '#3FADB5',
+            defaults: build_defaults(),
+            inputs: 1,
+            outputs: 1,
+            outputlabels: ['on end'],
+            icon: "video.png",
+            align: "right",
+            label: function () { return this.name || "Ffmpeg" },
+            oneditprepare: function () {
+                $("input:text[id^='node-input-']").each((index, element) => {
+                    $("#" + element.id).typedInput({
+                        default: "str",
+                        types: ["msg", "str"]
+                    })
+                    $("#" + element.id).typedInput('width', "70%")
+                    //console.log ("Setting #"  + element.id + " type to " + this[element.id.substr(11) + "type"])
+                    $("#" + element.id).typedInput('type', this[element.id.substr(11) + "type"])
+                })
+
+                $("input[id^='node-input-']").filter("input[type='number']").each((index, element) => {
+                    $("#" + element.id).typedInput({
+                        default: "num",
+                        types: ["msg", "num"]
+                    })
+                    $("#" + element.id).typedInput('type', this[element.id.substr(11) + "type"])
+                })
+
+                var dims = this.framesize.split("x")
+                $("#node-input-framewidth").val(dims[0])
+                $("#node-input-frameheight").val(dims[1])
+
+            },
+            oneditsave: function () {
+                $("input[id^='node-input-']").each((index, element) => {
+                    this[element.id.substr(11) + "type"] = $("#" + element.id).typedInput("type")
+                })
+                this.framesize = $("#node-input-framewidth").val() + "x" + $("#node-input-frameheight").val()
+            },
+            paletteLabel: "ffmpeg",
+        })
+    })
+
+</script>
+
+<script type="text/x-red" data-template-name="ffmpeg">
+    <div class="form-row">
+        <ul class="nav nav-tabs">
+            <li class="active"><a href="#video-in-tab" data-toggle="tab">Video In</a></li>
+            <li><a href="#audio-in-tab" data-toggle="tab">Audio In</a></li>
+            <li><a href="#output-tab" data-toggle="tab">Output</a></li>
+        </ul>
+        <div class="tab-content">
+            <div class="tab-pane active" id="video-in-tab">
+                <h4>Video In</h4>
+                <div>
+                    <label for="node-input-inpath">Path</label>
+                    <input type="text" id="node-input-inpath" placeholder="Path to input files">
+                </div>
+                <div>
+                    <label for="node-input-infile">File name</label>
+                    <input type="text" id="node-input-infile" placeholder="Use a pattern. eg img%04d.jpg">
+                </div>
+            </div>
+            <div class="tab-pane" id="audio-in-tab">
+                <h4>Audio In</h4>
+                <div>
+                    Audio not currently supported.
+                </div>
+            </div>
+            <div class="tab-pane" id="output-tab">
+                <h4>Output</h4>
+                <div>
+                    <label for="node-input-outpath">Path</label>
+                    <input type="text" id="node-input-outpath" placeholder="Output Path">
+                </div>
+                <div>
+                    <label for="node-input-outfile">File name</label>
+                    <input type="text" id="node-input-outfile" placeholder="Use a pattern. eg img%04d.jpg">
+                </div>
+                <div>
+                    <label for="node-input-framerate">Frame&nbsp;rate</label>
+                    <input type="number" id="node-input-framerate">
+                </div>
+                <div>
+                    <label for="node-input-framewidth">Frame&nbsp;width</label>
+                    <input type="number" id="node-input-framewidth">
+                </div>
+                <div>
+                    <label for="node-input-frameheight">Frame&nbsp;height</label>
+                    <input type="number" id="node-input-frameheight">
+                </div>
+                <div>
+                    <label for="node-input-crf">Constant Rate Factor</label>
+                    <input type="number" id="node-input-crf">
+                </div>
+            </div>
+        </div>
+    </div>
+</script>
+
+<script type="text/x-red " data-help-name="ffmpeg ">
+    <p>Ffmpeg</p>
+    <p>Merge a series of images into a video.</p>
+</script>
